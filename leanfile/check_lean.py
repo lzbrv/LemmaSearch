@@ -49,6 +49,33 @@ def theorem_names(source):
     return re.findall(DECL + f"({NAME_CHARS}+)", source, flags=re.MULTILINE)
 
 
+SCOPE_RE = re.compile(
+    r"^[ \t]*(?:(namespace|section)\b[ \t]*(\S*)|(end)\b|" + MODIFIERS
+    + f"(?:theorem|lemma)\\s+({NAME_CHARS}+))",
+    flags=re.MULTILINE,
+)
+
+
+def qualified_theorem_names(source):
+    """Full names of the theorems, with their enclosing `namespace`s, as `#print axioms`
+    needs them at the end of the file (e.g. `Foo.bar` for `bar` inside `namespace Foo`)."""
+    names, scopes = [], []
+    for m in SCOPE_RE.finditer(strip_comments(source)):
+        kind, scope_name, end, name = m.groups()
+        if kind == "namespace":
+            scopes.append(scope_name)
+        elif kind == "section":
+            scopes.append(None)
+        elif end:
+            if scopes:
+                scopes.pop()
+        elif name.startswith("_root_."):
+            names.append(name[len("_root_."):])
+        else:
+            names.append(".".join([s for s in scopes if s] + [name]))
+    return names
+
+
 def strip_comments(source):
     """Remove `--` and (nested) `/- -/` comments, leaving string literals intact."""
     out, i, depth, n = [], 0, 0, len(source)
@@ -140,7 +167,7 @@ def check(path, problem=None):
     check that the file still proves the problem's statement (see statement_issues)."""
     path = Path(path)
     source = path.read_text(encoding="utf-8")
-    names = theorem_names(source)
+    names = qualified_theorem_names(source)
     issues = (
         statement_issues(Path(problem).read_text(encoding="utf-8"), source)
         if problem
@@ -172,13 +199,15 @@ def check(path, problem=None):
     # Report errors against the original file name, not the temp file
     output = (result.stdout + result.stderr).replace(tmp_path, str(path))
 
-    # Parse `#print axioms` results
+    # Parse `#print axioms` results. Names may contain `'` (e.g. `foo'`), and axioms
+    # may carry universe levels (`Classical.choice.{u}`), which are dropped.
     axioms = {}
     for name, ax_list in re.findall(
-        r"'([^']+)' depends on axioms: \[(.*?)\]", output, flags=re.DOTALL
+        r"^'([^\n]+?)' depends on axioms: \[(.*?)\]", output, flags=re.DOTALL | re.MULTILINE
     ):
+        ax_list = re.sub(r"\.\{[^}]*\}", "", ax_list)
         axioms[name] = {a.strip() for a in ax_list.split(",") if a.strip()}
-    for name in re.findall(r"'([^']+)' does not depend on any axioms", output):
+    for name in re.findall(r"^'([^\n]+?)' does not depend on any axioms", output, flags=re.MULTILINE):
         axioms[name] = set()
 
     used = set().union(*axioms.values())
