@@ -4,7 +4,17 @@ import sys
 import tempfile
 from collections import Counter
 from pathlib import Path
-
+'''check() decides whether a lean file really proves a problem, compiles with
+lake evn lean and marks it solved if 3 things hold:
+- It compiles with no errors
+- It's not cheating with sorry or axioms. It runs #print axioms on each theorem and 
+accepts only the three standard axioms (propext, Classical.choice, Quot.sound).
+That rejects sorry (which shows up as sorryAx) and any custom axiom.
+- It proves the original statement. This check only runs when you give it the problem 
+file. The imports and the theorem's name and statement must be unchanged, and no new
+commands that could change the statement's meaning (notation, instance, open, and so 
+on) may be added.
+'''
 # Show Lean's Unicode symbols (≤, ℝ, ...) correctly in the Windows console
 sys.stdout.reconfigure(encoding="utf-8")
 
