@@ -1,2 +1,4 @@
 /.lake
 __pycache__
+p2m_raw/
+.env
